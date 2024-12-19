@@ -49,7 +49,6 @@ const DFASimulator = ({ onBack }) => {
         setResult("String Rejected: Final state not reached.");
       }
 
-      // Render DFA as SVG
       renderDFASVG(statesArray, transitionArray, startState, finalStatesArray);
     } catch (error) {
       setResult("Error: Invalid input format.");
@@ -59,7 +58,6 @@ const DFASimulator = ({ onBack }) => {
   const renderDFASVG = (statesArray, transitions, startState, finalStatesArray) => {
     const elements = [];
 
-    // Add nodes (states)
     statesArray.forEach((state) => {
       elements.push({
         data: {
@@ -70,7 +68,6 @@ const DFASimulator = ({ onBack }) => {
       });
     });
 
-    // Add edges (transitions)
     transitions.forEach(({ from, symbol, to }) => {
       elements.push({
         data: {
@@ -81,9 +78,8 @@ const DFASimulator = ({ onBack }) => {
       });
     });
 
-    // Render using Cytoscape
     Cytoscape({
-      container: document.getElementById("cy"), // Div ID to render the SVG
+      container: document.getElementById("cy"), 
       elements: elements,
       style: [
         {

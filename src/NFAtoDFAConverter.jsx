@@ -1,6 +1,5 @@
 import React, { useState } from "react";
-import dagre from "dagre";
-import * as d3 from "d3";
+import Cytoscape from "cytoscape";
 import { ArrowLeft } from "lucide-react";
 
 const NFAtoDFAConverter = ({ onBack }) => {
@@ -8,122 +7,156 @@ const NFAtoDFAConverter = ({ onBack }) => {
   const [nfaTransitions, setNFATransitions] = useState("");
   const [startState, setStartState] = useState("");
   const [finalStates, setFinalStates] = useState("");
-  const [inputAlphabets, setInputAlphabets] = useState("");
   const [dfaResult, setDFAResult] = useState(null);
 
   const convertNFAtoDFA = () => {
     try {
       const stateList = nfaStates.split(",").map((s) => s.trim());
-      const finalStateSet = new Set(
-        finalStates.split(",").map((s) => s.trim())
-      );
-      const alphabets = inputAlphabets.split(",").map((s) => s.trim());
+      const finalStateSet = new Set(finalStates.split(",").map((s) => s.trim()));
       const transitionRules = {};
 
       // Parse transitions
       nfaTransitions.split("\n").forEach((rule) => {
         const [from, symbol, to] = rule.split(",").map((s) => s.trim());
-        const displaySymbol = symbol === "" ? "ε" : symbol; // If the symbol is empty, display epsilon (ε)
-
-        // Check if the symbol is valid (either part of the alphabet or epsilon)
-        if (alphabets.includes(symbol) || symbol === "") {
-          if (!transitionRules[from]) transitionRules[from] = {};
-          if (!transitionRules[from][displaySymbol])
-            transitionRules[from][displaySymbol] = new Set();
-          transitionRules[from][displaySymbol].add(to);
-        }
+        if (!transitionRules[from]) transitionRules[from] = {};
+        if (!transitionRules[from][symbol]) transitionRules[from][symbol] = new Set();
+        transitionRules[from][symbol].add(to);
       });
 
-      // Add trap state for undefined transitions
-      const trapState = "trap";
-      stateList.push(trapState);
-      transitionRules[trapState] = {};
-      alphabets.forEach((symbol) => {
-        transitionRules[trapState][symbol] = new Set([trapState]);
-      });
+      const dfaStates = new Set();
+      const dfaTransitions = {};
+      const queue = [new Set([startState])];
+      const trapState = "TRAP";
 
-      stateList.forEach((state) => {
-        if (!transitionRules[state]) transitionRules[state] = {};
-        alphabets.forEach((symbol) => {
-          if (!transitionRules[state][symbol]) {
-            transitionRules[state][symbol] = new Set([trapState]);
-          }
-        });
-      });
+      while (queue.length > 0) {
+        const currentSet = queue.shift();
+        const setName = Array.from(currentSet).sort().join(",");
 
-      // Convert NFA to DFA logic here...
+        if (!dfaStates.has(setName)) {
+          dfaStates.add(setName);
 
-      // Layout and render the DFA graph
-      const g = new dagre.graphlib.Graph();
-      g.setGraph({});
-      g.setDefaultEdgeLabel(() => ({}));
+          Object.keys(transitionRules).forEach((fromState) => {
+            Object.keys(transitionRules[fromState]).forEach((symbol) => {
+              const reachableStates = Array.from(currentSet)
+                .map((state) => transitionRules[state]?.[symbol] || new Set())
+                .reduce((acc, curr) => new Set([...acc, ...curr]), new Set());
 
-      // Add nodes and edges to the graph
-      stateList.forEach((state) => {
-        g.setNode(state, { label: state });
-      });
-
-      Object.keys(transitionRules).forEach((from) => {
-        Object.keys(transitionRules[from]).forEach((symbol) => {
-          transitionRules[from][symbol].forEach((to) => {
-            g.setEdge(from, to, { label: symbol });
+              const reachableSetName = Array.from(reachableStates).sort().join(",");
+              if (reachableSetName) {
+                if (!dfaStates.has(reachableSetName)) {
+                  queue.push(reachableStates);
+                }
+                if (!dfaTransitions[setName]) dfaTransitions[setName] = {};
+                dfaTransitions[setName][symbol] = reachableSetName;
+              } else {
+                // Add transition to the trap state
+                if (!dfaTransitions[setName]) dfaTransitions[setName] = {};
+                dfaTransitions[setName][symbol] = trapState;
+              }
+            });
           });
-        });
-      });
-
-      dagre.layout(g);
-
-      // Manually set the position of the trap state
-      if (g.hasNode(trapState)) {
-        const maxY = Math.max(...g.nodes().map((v) => g.node(v).y));
-        g.node(trapState).y = maxY + 100; // Position it 100 units below the lowest state
+        }
       }
 
-      // Render the graph using d3
-      const svg = d3.select("svg");
-      svg.selectAll("*").remove(); // Clear previous graph
-      const inner = svg.append("g");
+      // Add transitions for the trap state
+      const allSymbols = new Set(
+        Object.values(transitionRules)
+          .flatMap((rule) => Object.keys(rule))
+      );
 
-      g.nodes().forEach((v) => {
-        const node = g.node(v);
-        inner
-          .append("circle")
-          .attr("cx", node.x)
-          .attr("cy", node.y)
-          .attr("r", 20)
-          .attr("fill", "white")
-          .attr("stroke", "black");
-        inner
-          .append("text")
-          .attr("x", node.x)
-          .attr("y", node.y)
-          .attr("dy", ".35em")
-          .attr("text-anchor", "middle")
-          .text(v);
+      dfaStates.add(trapState);
+      dfaTransitions[trapState] = {};
+      allSymbols.forEach((symbol) => {
+        dfaTransitions[trapState][symbol] = trapState;
       });
 
-      g.edges().forEach((e) => {
-        const edge = g.edge(e);
-        inner
-          .append("line")
-          .attr("x1", g.node(e.v).x)
-          .attr("y1", g.node(e.v).y)
-          .attr("x2", g.node(e.w).x)
-          .attr("y2", g.node(e.w).y)
-          .attr("stroke", "black");
-        inner
-          .append("text")
-          .attr("x", (g.node(e.v).x + g.node(e.w).x) / 2)
-          .attr("y", (g.node(e.v).y + g.node(e.w).y) / 2)
-          .attr("dy", ".35em")
-          .attr("text-anchor", "middle")
-          .text(edge.label === "undefined" ? "ε" : edge.label); // Replace "undefined" with "ε"
-      });
+      // Determine new final states
+      const dfaFinalStates = Array.from(dfaStates).filter((state) =>
+        state.split(",").some((s) => finalStateSet.has(s))
+      );
 
-      setDFAResult(g);
+      const dfaData = {
+        states: Array.from(dfaStates),
+        startState,
+        finalStates: dfaFinalStates,
+        transitions: dfaTransitions,
+      };
+
+      setDFAResult(dfaData);
+
+      // Render DFA Visualization
+      renderDFASVG(dfaData.states, dfaData.transitions, dfaData.startState, dfaData.finalStates);
     } catch (error) {
-      console.error("Error converting NFA to DFA:", error);
+      setDFAResult({ error: error.message });
     }
+  };
+
+  const renderDFASVG = (statesArray, transitions, startState, finalStatesArray) => {
+    const elements = [];
+
+    // Add nodes (states)
+    statesArray.forEach((state) => {
+      elements.push({
+        data: {
+          id: state,
+          label: state,
+          type: finalStatesArray.includes(state) ? "final" : "normal",
+        },
+      });
+    });
+
+    // Add edges (transitions)
+    Object.keys(transitions).forEach((from) => {
+      Object.keys(transitions[from]).forEach((symbol) => {
+        elements.push({
+          data: {
+            source: from,
+            target: transitions[from][symbol],
+            label: symbol,
+          },
+        });
+      });
+    });
+
+    // Render using Cytoscape with layout
+    Cytoscape({
+      container: document.getElementById("cy"), // Div ID to render the SVG
+      elements: elements,
+      style: [
+        {
+          selector: "node",
+          style: {
+            "background-color": "#3498db",
+            label: "data(label)",
+            "text-valign": "center",
+            "text-halign": "center",
+          },
+        },
+        {
+          selector: "node[type='final']",
+          style: {
+            "border-color": "#e74c3c",
+            "border-width": "2px",
+          },
+        },
+        {
+          selector: "edge",
+          style: {
+            "curve-style": "bezier",
+            "target-arrow-shape": "triangle",
+            "line-color": "#2ecc71",
+            "target-arrow-color": "#2ecc71",
+            label: "data(label)",
+          },
+        },
+      ],
+      layout: {
+        name: "breadthfirst", // Automatic layout for visibility
+        directed: true,
+        roots: ${startState}, // Start from the initial state
+        padding: 30,
+      },
+    });
   };
 
   return (
@@ -147,50 +180,41 @@ const NFAtoDFAConverter = ({ onBack }) => {
             />
             <textarea
               className="w-full p-2 border rounded"
-              placeholder="NFA Transitions (one per line, format: from,symbol,to)"
+              placeholder="Transitions (from,symbol,to - one per line) e.g., q0,a,q1"
               value={nfaTransitions}
               onChange={(e) => setNFATransitions(e.target.value)}
             />
             <input
-              className="w-full p-2 border rounded"
               type="text"
-              placeholder="Start State"
+              className="w-full p-2 border rounded"
+              placeholder="Start State e.g., q0"
               value={startState}
               onChange={(e) => setStartState(e.target.value)}
             />
             <input
-              className="w-full p-2 border rounded"
               type="text"
-              placeholder="Final States (comma-separated)"
+              className="w-full p-2 border rounded"
+              placeholder="Final States (comma-separated) e.g., q2"
               value={finalStates}
               onChange={(e) => setFinalStates(e.target.value)}
             />
-            <input
-              className="w-full p-2 border rounded"
-              type="text"
-              placeholder="Input Alphabets (comma-separated)"
-              value={inputAlphabets}
-              onChange={(e) => setInputAlphabets(e.target.value)}
-            />
             <button
               onClick={convertNFAtoDFA}
-              className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-700"
+              className="w-full p-2 bg-green-500 text-white rounded hover:bg-green-600 transition"
             >
-              Convert NFA to DFA
+              Convert to DFA
             </button>
             {dfaResult && (
               <div
                 className={`mt-4 p-2 rounded ${
-                  dfaResult.error
-                    ? "bg-red-100 text-red-700"
-                    : "bg-green-100 text-green-700"
+                  dfaResult.error ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"
                 }`}
               >
                 {dfaResult.error ? dfaResult.error : "Conversion Successful!"}
               </div>
             )}
           </div>
-          <svg width="800" height="600"></svg>
+          <div id="cy" style={{ width: "100%", height: "400px", marginTop: "16px" }}></div>
         </div>
       </div>
     </div>
